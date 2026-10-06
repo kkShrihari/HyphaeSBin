@@ -1,25 +1,23 @@
-# Python cache
 __pycache__/
 *.py[cod]
 
-# Environments
 .conda/
 venv/
 env/
 
-# Temporary files
 *.log
 *.tmp
 *.swp
 
-# Large sequencing files
 *.fastq
 *.fastq.gz
+*.fq
+*.fq.gz
 *.bam
 *.sam
-*.fasta
-*.fna
+*.cram
 
-# Generated results
 results/
 outputs/
+
+.DS_Store
