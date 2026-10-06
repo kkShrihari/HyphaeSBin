@@ -1,0 +1,25 @@
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Environments
+.conda/
+venv/
+env/
+
+# Temporary files
+*.log
+*.tmp
+*.swp
+
+# Large sequencing files
+*.fastq
+*.fastq.gz
+*.bam
+*.sam
+*.fasta
+*.fna
+
+# Generated results
+results/
+outputs/

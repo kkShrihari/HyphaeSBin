@@ -1,0 +1,491 @@
+# =============================================================================
+# HyphaeSBin Configuration — TE + TNF + COV (FINAL VALIDATED run)
+# =============================================================================
+# Supersedes the earlier "BEST / PRIMARY run" config. Three confirmed fixes
+# applied on top of it, based on controlled mock testing
+# (/DATA_LUN/skkumara/run/mock/):
+#
+#   1. skani_min_af: 0.1 -> 80.0
+#      CONFIRMED UNIT BUG: skani's own --help shows --min-af default is 15
+#      (a percentage, 0-100 scale), so 0.1 meant 0.1% aligned fraction --
+#      150x more permissive than skani's own default. This let bins with
+#      only trivial overlap (e.g. one shared conserved region) get flagged
+#      as "redundant" and merged/discarded, silently pulling foreign
+#      sequence into surviving bins. 80.0 = require 80% reciprocal aligned
+#      fraction before treating two bins as true duplicates.
+#
+#   2. max_iter: 10 -> 0
+#      CONFIRMED via controlled mock test: iterative refinement was
+#      actively splitting already-clean HDBSCAN clusters. Tuber_melanosporum
+#      had a ~100%-pure raw cluster (83% of its total bp) that refinement
+#      fragmented into 3 separate bins (largest surviving piece: 42.57% of
+#      the species). Melampsora_larici_populina showed the same pattern.
+#      Disabling refinement entirely (max_iter=0) was confirmed to largely
+#      recover both species. NOTE: this is a blunt instrument -- a middle
+#      ground (max_iter=2-3 with a tighter refinement_max_distance) has NOT
+#      yet been tested and may be worth trying if the rescue function of
+#      refinement is missed for other, less-severe cases.
+#
+#   3. eukcc_merge_enabled: true -> false
+#      CONFIRMED: EukCC's merge-search feature silently tries dozens of
+#      candidate bin-merge combinations per bin (e.g. "For bin bin_5.fa we
+#      found 39 merging combinations") and reports whichever wins, with no
+#      clean per-bin attribution. This made bin-to-bin EukCC comparisons
+#      across pipeline stages invalid (bin IDs/numbers changed after
+#      dedup+merge in ways that couldn't be traced). Disabled for clean,
+#      directly-attributable per-bin completeness/contamination numbers.
+#      Re-enable only for a final production run once bin structure is
+#      otherwise finalized, per the long-term strategy below.
+#
+# ADDITIONAL, HARMLESS CHANGE:
+#   compute_silhouette: true -> false
+#      Diagnostic-only, never affects clustering decisions. Turned off
+#      purely to save runtime -- no behavior change to bin assignments.
+#
+# STILL OPEN / NOT YET DECIDED (do not change without a controlled test):
+#   hdbscan_method: still "eom". A controlled leaf-only test (identical
+#   config otherwise) is the planned next step, to check whether leaf
+#   separates the remaining bin_001-type chimera group (Ustilago_maydis /
+#   Aspergillus_niger / Candida_albicans / Yarrowia_lipolytica /
+#   Schizosaccharomyces_pombe -- confirmed present already at the raw
+#   HDBSCAN stage, with good N50/abundance, so NOT explained by assembly
+#   fragmentation or low coverage). Do not combine an eom->leaf change with
+#   any other simultaneous parameter change, or the leaf test result will
+#   be unattributable.
+#
+# NOT expected to be fixed by ANY clustering-parameter change (confirmed via
+# direct N50 / raw-read-depth tracing, documented as benchmark/assembly
+# limitations rather than pipeline defects):
+#   - Cenococcum_geophilum, Rhizophagus_irregularis: assembly-stage
+#     fragmentation (N50 6.4kb and 15.1kb respectively, despite large total
+#     bp) -- clustering cannot merge contigs the assembler never joined.
+#   - Cryptococcus_wieringae, Neurospora_crassa: both exclusive to sample
+#     s6, whose community is dominated by Rhizophagus_irregularis +
+#     Basidiobolus_meristosporus (91.3% of s6's reads). Cryptococcus
+#     received just 0.32% of s6's read budget (49,548 reads), assembling
+#     into 4,129 fragments with median length 358bp -- correctly filtered
+#     by the 2000bp length cutoff, leaving only 1 contig for clustering.
+# =============================================================================
+
+# ── General ──────────────────────────────────────────────────────────────────
+threads: 32
+seed: 42
+min_contig_length: 1000
+force_trust_checkpoints: false
+
+# ── Preprocessing (13-step design — see preprocessing.py DEFAULT_CONFIG) ──────
+read_type: short
+read_type_detect_seed: 0
+auto_install_tools: false
+
+dedup_ani: 99.5
+dedup_min_af: 95.0
+dedup_min_length_ratio: 0.0
+dedup_min_length: 2000
+dedup_cross_sample_only: true
+dedup_skani_args: "-c 30 -m 200 --faster-small -s 95"
+skip_dedup: false
+dedup_max_contigs: 500000
+
+tiara_min_len: 2000
+tiara_prob_cutoff: [0.65, 0.65]
+whokaryote_minsize: 2000
+whokaryote_model: "T"
+classification_confidence_high: 0.80
+rule_based_high_conf_sources: null
+
+barrnap_kingdom: fun
+
+max_mapping_workers: auto
+min_threads_per_sample: 8
+
+adaptive_min_cov: 2.0
+adaptive_min_samples: 2
+adaptive_min_breadth: 0.3
+rescue_enabled: true
+rescue_reference_fasta: ""
+rescue_min_identity: 75.0
+rescue_min_query_cov: 0.5
+
+scoring_cov_cv_high: 1.5
+scoring_gc_zscore_flag: 3.0
+scoring_tnf_dist_flag: 2.5
+enable_tnf_qc_signal: true
+
+# ── Coverage Features (coverage.py v9 — N+4D, self-describing manifest) ──────
+coverage_k: 200
+coverage_n_cores: null
+coverage_strict_numeric_columns: true
+coverage_outlier_cap_percentile: 99.5
+coverage_deterministic: false
+coverage_brute_force_max_n: 5000
+
+# ── Databases ────────────────────────────────────────────────────────────────
+funTEdb: /home/skkumara/databases/MycoMobilome_v1.1/MycoMobilome_v1.1-clustered_80_TE_library.fasta
+
+# ── TE Composition (te_composition.py V33 — V22_5D schema) ───────────────────
+te_mode: fast
+mmseqs_sensitivity: 5.7
+mmseqs_min_seq_id: 0.7
+mmseqs_coverage: 0.1
+mmseqs_max_seq_len: 100000
+mmseqs_evalue: 1e-5
+te_pa: 36
+te_frag: 20000000
+te_min_sw_score: 225
+apply_length_weight_to_features: false
+full_confidence_te_bp: 5000
+full_confidence_length: 10000
+full_confidence_hits: 5
+weight_te_coef: 0.55
+weight_hit_coef: 0.25
+weight_quality_coef: 0.20
+repeatmasker_quality_reference_score: 1000.0
+unclassified_warn_fraction: 0.95
+
+# ── TNF Gene (tnf_gene.py v2 — whole-contig k4 frequency, k=4 is fixed) ──────
+min_contig_len: 1000
+min_valid_kmers: 50
+full_confidence_kmers: 5000
+weight_mode: confidence
+
+# ── Encoder (encoder.py -- Sigmoid removed from decoder, gate sees per-contig
+#    reliability weights in contig_weighted mode) — TE + TNF + COV ALL ON ────
+tnf_include: true
+te_include: true
+                           # TE-off retrain had slightly higher kNN purity
+                           # (0.966 vs 0.962) but produced far worse actual
+                           # bins (many species merged into large chimeric
+                           # bins) -- the isolated latent-purity metric does
+                           # not predict end-to-end binning quality.
+cov_include: true
+allow_missing_modalities: false
+device: cpu
+parallel_phase1: false
+parallel_phase1_max_workers: null
+
+# Latent dims
+latent_dim_tnf: 32
+latent_dim_te: 5
+latent_dim_cov: null
+final_dim: null
+
+# Architecture
+hidden_scale: 4
+hidden_min: 32
+hidden_max: 512
+dropout: 0.1
+n_hidden_layers: 2
+
+# β-VAE
+beta_tnf: 0.01
+beta_te: 0.1
+beta_cov: 0.1
+kl_anneal_epochs: 50
+kl_free_bits: 0.01
+
+# Training epochs
+phase1_epochs_tnf: 75
+phase1_epochs_te: 50
+phase1_epochs_cov: 50
+phase2_epochs: 50
+
+# Learning rates
+phase1_lr: 0.001
+phase2_lr: 0.00005
+
+# Loss scaling
+loss_scale_tnf: 1.0
+loss_scale_te: 0.1
+loss_scale_cov: 0.1
+loss_scale_fusion: 0.05
+
+# Fusion gate
+fusion_mode: contig_weighted
+fusion_gate_entropy_weight: 0.01
+
+# Coverage feature split
+cov_use_n_samples_present_as_feature: false
+
+# Batch size
+batch_size: null
+
+# =============================================================================
+# CLUSTERING (clustering.py v8.11) -- FINAL: v8.10 + LATE kNN rescue (after sub-clustering)
+# =============================================================================
+
+# --- HDBSCAN (unchanged -> cached) ---
+hdbscan_algorithm: best
+hdbscan_min_cluster_size: 30
+hdbscan_min_samples: 5
+hdbscan_epsilon: 0.00
+hdbscan_method: eom
+hdbscan_soft_prob_min: 0.35
+cluster_min_contig_len: 2000
+
+# --- Rescue (unchanged) ---
+noise_rescue_enabled: true
+noise_rescue_candidate: knn
+noise_rescue_stage: late            # v8.11: rescue AFTER sub-clustering/merging (early rescue disturbed the chimera split -> Leptosphaeria 80%)
+noise_max_distance: 1.00
+noise_rescue_min_margin: 0.00
+noise_local_agreement_enabled: true
+noise_local_k: 10
+noise_local_min_support: 5
+noise_local_agreement: 0.90
+noise_reference_prob_min: 0.35
+noise_neighbor_max_distance: 0.65
+noise_query_batch_size: 4096
+
+# --- Refinement OFF ---
+max_iter: 0
+convergence_threshold: 0.01
+refinement_max_distance: 0.35
+
+# --- Sub-clustering (unchanged from last run) ---
+subcluster_enabled: true
+subcluster_min_bin_contigs: 2000
+subcluster_method: leaf
+subcluster_min_cluster_size: 15
+subcluster_min_samples: 5
+subcluster_tnf_sep_max: 2.0
+subcluster_cov_merge_tau: 2.0
+subcluster_min_part_bp: 500000
+subcluster_noise_k: 10
+subcluster_noise_min_agreement: 0.4
+subcluster_max_misfit: 0.25       # NEW v8.3: fit-test guard inside sub-clustering (keeps S. cerevisiae out of Blumeria)
+merge_max_gc_diff: 0.0
+merge_gc_outside_max: 0.0         # off (caused trade-offs in v8.4/v8.5)
+merge_gc_q_lo: 0.05
+merge_gc_q_hi: 0.95
+subcluster_te_mode: auto
+subcluster_te_min_weight: 0.3
+subcluster_te_min_agreement: 0.10
+
+# --- Coverage-shape pruning (now runs BEFORE merging) ---
+prune_enabled: true
+prune_min_bin_contigs: 30
+prune_shape_z: 4.0
+prune_max_frac: 0.20              # was 0.10 -- Leptosphaeria bin (11% Melampsora) was being skipped
+
+# --- Same-genome bin merge + v8.2 guards ---
+binmerge_enabled: true
+binmerge_tnf_sep_max: 2.0
+binmerge_cov_tau: 2.0
+binmerge_min_contigs: 10
+binmerge_max_misfit: 0.25        # NEW: refuse if >25% of the smaller bin misfits the larger bin's coverage shape
+binmerge_misfit_z: 4.0           # NEW
+binmerge_min_tnf_mix: 0.0        # was 0.10 -- blocked 16 genuine fragment merges; misfit alone is the guard
+
+# --- Reassignment of pruned contigs (NEW) ---
+reassign_enabled: true
+reassign_k: 20
+reassign_min_votes: 5
+reassign_max_z: 3.0
+
+# --- Contig-level TNF-kNN consensus reassignment (NEW v8.4) ---
+tnf_consensus_enabled: false     # off (scattered contigs in v8.4)
+tnf_consensus_k: 15
+tnf_consensus_min: 0.8
+tnf_consensus_iters: 5
+tnf_consensus_max_z: 3.0          # NEW v8.5: move only if coverage shape fits the target bin
+
+# --- Best-home placement of leaf pieces (NEW v8.6) ---
+subcluster_best_home: true
+refine_cov_standardize: true     # v8.9 FINAL CHANGE. Set false to get back exactly v8.8 (12 eukaryote HQ)
+best_home_k: 15
+best_home_min_share: 0.7        # >= 70% of outside TNF neighbours in one bin
+best_home_max_ratio: 1.5        # outside neighbours about as close as own contigs (same genome)
+best_home_sample: 300
+
+# --- EukCC marker-checked merge of GC-refused pairs (NEW v8.6) ---
+marker_merge_enabled: false      # off: keeps HyphaeSBin marker-free
+marker_min_bp: 500000
+marker_max_checks: 40             # cap on EukCC checks (each takes minutes)
+marker_min_gain: 5.0              # merged completeness must rise by >= 5 points
+marker_max_cont_increase: 2.0     # ... while contamination rises by <= 2 points
+
+# --- Short-contig recruitment (unchanged) ---
+recruit_enabled: true
+recruit_min_len: 1000
+recruit_k: 15
+recruit_min_support: 10
+recruit_agreement: 0.9
+recruit_max_dist: 0.5
+
+# --- Bin filter / dedup ---
+min_contigs_per_bin: 1
+min_bin_length_bp: 500000
+min_bin_n50_bp: 1000
+skani_ani_threshold: 99.0
+skani_min_af: 80.0
+
+# --- EukCC: false for test runs, true for the final benchmark run ---
+run_eukcc: false
+eukcc_single_per_bin: true
+eukcc_db: /DATA_LUN/skkumara/databases/eukcc2_db_ver_1.1/
+eukcc_conda_env: eukcc22
+eukcc_scratch_dir: /tmp
+eukcc_merge_enabled: false
+eukcc_merge_n_combine: 1
+eukcc_merge_ani: 99
+eukcc_merge_within: 1500
+
+# --- Runtime ---
+compute_silhouette: false
+resume: true
+clustering_backend: cpu
+clustering_threads: 32
+clustering_seed: 42
+clusters_non_deduplicated_dir: clusters_non_deduplicated
+clusters_deduplicated_dir: clusters_deduplicated
+
+# 
+# 
+# # =============================================================================
+# # CLUSTERING (clustering.py v8.8) -- FINAL: v8.3 behaviour + neighbour-based best-home (no markers, no taxonomy)
+# # =============================================================================
+# 
+# # --- HDBSCAN (unchanged -> cached) ---
+# hdbscan_algorithm: best
+# hdbscan_min_cluster_size: 30
+# hdbscan_min_samples: 5
+# hdbscan_epsilon: 0.00
+# hdbscan_method: eom
+# hdbscan_soft_prob_min: 0.35
+# cluster_min_contig_len: 2000
+# 
+# # --- Rescue (unchanged) ---
+# noise_rescue_enabled: true
+# noise_max_distance: 1.00
+# noise_rescue_min_margin: 0.00
+# noise_local_agreement_enabled: true
+# noise_local_k: 10
+# noise_local_min_support: 5
+# noise_local_agreement: 0.90
+# noise_reference_prob_min: 0.35
+# noise_neighbor_max_distance: 0.65
+# noise_query_batch_size: 4096
+# 
+# # --- Refinement OFF ---
+# max_iter: 0
+# convergence_threshold: 0.01
+# refinement_max_distance: 0.35
+# 
+# # --- Sub-clustering (unchanged from last run) ---
+# subcluster_enabled: true
+# subcluster_min_bin_contigs: 2000
+# subcluster_method: leaf
+# subcluster_min_cluster_size: 15
+# subcluster_min_samples: 5
+# subcluster_tnf_sep_max: 2.0
+# subcluster_cov_merge_tau: 2.0
+# subcluster_min_part_bp: 500000
+# subcluster_noise_k: 10
+# subcluster_noise_min_agreement: 0.6
+# subcluster_max_misfit: 0.25       # NEW v8.3: fit-test guard inside sub-clustering (keeps S. cerevisiae out of Blumeria)
+# merge_max_gc_diff: 0.0
+# merge_gc_outside_max: 0.0         # off (caused trade-offs in v8.4/v8.5)
+# merge_gc_q_lo: 0.05
+# merge_gc_q_hi: 0.95
+# subcluster_te_mode: auto
+# subcluster_te_min_weight: 0.3
+# subcluster_te_min_agreement: 0.10
+# 
+# # --- Coverage-shape pruning (now runs BEFORE merging) ---
+# prune_enabled: true
+# prune_min_bin_contigs: 30
+# prune_shape_z: 4.0
+# prune_max_frac: 0.20              # was 0.10 -- Leptosphaeria bin (11% Melampsora) was being skipped
+# 
+# # --- Same-genome bin merge + v8.2 guards ---
+# binmerge_enabled: true
+# binmerge_tnf_sep_max: 2.0
+# binmerge_cov_tau: 2.0
+# binmerge_min_contigs: 10
+# binmerge_max_misfit: 0.25        # NEW: refuse if >25% of the smaller bin misfits the larger bin's coverage shape
+# binmerge_misfit_z: 4.0           # NEW
+# binmerge_min_tnf_mix: 0.0        # was 0.10 -- blocked 16 genuine fragment merges; misfit alone is the guard
+# 
+# # --- Reassignment of pruned contigs (NEW) ---
+# reassign_enabled: true
+# reassign_k: 20
+# reassign_min_votes: 5
+# reassign_max_z: 3.0
+# 
+# # --- Contig-level TNF-kNN consensus reassignment (NEW v8.4) ---
+# tnf_consensus_enabled: false     # off (scattered contigs in v8.4)
+# tnf_consensus_k: 15
+# tnf_consensus_min: 0.8
+# tnf_consensus_iters: 5
+# tnf_consensus_max_z: 3.0          # NEW v8.5: move only if coverage shape fits the target bin
+# 
+# # --- Best-home placement of leaf pieces (NEW v8.6) ---
+# subcluster_best_home: true
+# best_home_k: 15
+# best_home_min_share: 0.7        # >= 70% of outside TNF neighbours in one bin
+# best_home_max_ratio: 1.5        # outside neighbours about as close as own contigs (same genome)
+# best_home_sample: 300
+# 
+# # --- EukCC marker-checked merge of GC-refused pairs (NEW v8.6) ---
+# marker_merge_enabled: false      # off: keeps HyphaeSBin marker-free
+# marker_min_bp: 500000
+# marker_max_checks: 40             # cap on EukCC checks (each takes minutes)
+# marker_min_gain: 5.0              # merged completeness must rise by >= 5 points
+# marker_max_cont_increase: 2.0     # ... while contamination rises by <= 2 points
+# 
+# # --- Short-contig recruitment (unchanged) ---
+# recruit_enabled: true
+# recruit_min_len: 1000
+# recruit_k: 15
+# recruit_min_support: 10
+# recruit_agreement: 0.9
+# recruit_max_dist: 0.5
+# 
+# # --- Bin filter / dedup ---
+# min_contigs_per_bin: 1
+# min_bin_length_bp: 500000
+# min_bin_n50_bp: 1000
+# skani_ani_threshold: 99.0
+# skani_min_af: 80.0
+# 
+# # --- EukCC: false for test runs, true for the final benchmark run ---
+# run_eukcc: false
+# eukcc_single_per_bin: true
+# eukcc_db: /DATA_LUN/skkumara/databases/eukcc2_db_ver_1.1/
+# eukcc_conda_env: eukcc22
+# eukcc_scratch_dir: /tmp
+# eukcc_merge_enabled: false
+# eukcc_merge_n_combine: 1
+# eukcc_merge_ani: 99
+# eukcc_merge_within: 1500
+# 
+# # --- Runtime ---
+# compute_silhouette: false
+# resume: true
+# clustering_backend: cpu
+# clustering_threads: 32
+# clustering_seed: 42
+# clusters_non_deduplicated_dir: clusters_non_deduplicated
+# clusters_deduplicated_dir: clusters_deduplicated
+
+# =============================================================================
+# MULTI-RUN MODE (new) -- all keys are inert while all_runs / te_runs / modality_runs / best_of_it are off.
+# The shared steps (preprocessing, coverage, TNF, TE) run ONCE; then each modality combination gets its own
+# <outdir>/runs/<tag>/encoder and <outdir>/runs/<tag>/clustering.
+# Tags: te | tnf | cov | tetnf | tecov | tnfcov | tetnfcov (= TNF+TE+COV = the original single pipeline)
+# =============================================================================
+all_runs: true           # run all 7 modality combinations
+te_runs: false           # all_runs already selects the TE combinations
+modality_runs: []        # extra explicit tags, e.g. [tnfcov, tecov] (added to the two switches above)
+best_of_it: true         # pool selected runs and keep the best duplicate-bin representatives
+                         #       (highest completeness - 5 x contamination by EukCC), then EukCC on the result
+                         #       -> <outdir>/best_of_it   (individual runs untouched). Needs eukcc_db / eukcc_conda_env below.
+best_of_runs: [tetnfcov, tnfcov] # pool only the requested two runs
+best_of_af_mode: contained   # contained: a partial copy inside a bigger bin counts as duplicate | both: only near-identical bins
+eukcc_executable: /DATA_LUN/skkumara/Final/Zosteria_marina/miniforge3/envs/eukcc22/bin/eukcc # EukCC executable
+                         # (used when `conda` is not on PATH; the pipeline also finds a sibling env named eukcc_conda_env itself)
+
+# Resource reporting (writes resource_report.tsv/json in the run output).
+resource_profile_enabled: true
+resource_profile_interval_seconds: 0.5

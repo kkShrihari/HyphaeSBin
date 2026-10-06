@@ -1,0 +1,16 @@
+stage	parent	status	cache	wall_seconds	share_of_pipeline_percent	cpu_seconds	cpu_percent_one_core_scale	peak_ram_bytes	peak_gpu_bytes	peak_gpu_util_device_percent	disk_read_bytes	disk_write_bytes	peak_disk_used_delta_bytes	input_bytes	output_bytes	input_contigs	output_contigs	removed_contigs	input_bp	output_bp	removed_bp	throughput_input_mb_per_hour	throughput_contigs_per_hour	error
+work		ok	unknown	0	0.0								0											
+work		ok	unknown	0	0.0								0											
+work		ok	unknown	0	0.0								0											
+work		ok	unknown	0	0.0								4096											
+work		ok	unknown	0.015	31.91								4096											
+work		ok	unknown	0	0.0								4096											
+work		ok	unknown	0	0.0								4096											
+work		ok	unknown	0	0.0								4096											
+work		ok	unknown	0	0.0								4096											
+work		ok	unknown	0	0.0								4096											
+work		ok	unknown	0	0.0								4096											
+work		ok	unknown	0	0.0								4096											
+run_encoder/cached	pipeline_total	cached	hit	0	0.0								4096		106071									
+bad	pipeline_total	failed	unknown	0	0.0								4096											ZeroDivisionError: division by zero
+pipeline_total		failed	unknown	0.047	100.0								4096											

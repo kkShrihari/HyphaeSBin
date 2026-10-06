@@ -1,0 +1,172 @@
+# =============================================================================
+# hyphaesbin — main pipeline conda environment
+# =============================================================================
+# Covers everything imported/required by main.py and the six pipeline stages
+# it orchestrates: preprocessing, coverage, TE composition, TNF composition,
+# encoder, clustering.
+#
+# Rebuilt against the ACTUAL current modules (not the v6 file's assumptions):
+#   - checked every `import` at the top of preprocessing.py, coverage.py,
+#     tnf_gene.py, te_composition.py, encoder.py, clustering.py
+#   - cross-checked against deps.py's own PYTHON_DEPS / EXTERNAL_TOOLS lists,
+#     which mirror those same modules' real requirements
+#
+# CHANGES FROM v6 (disclosed, not silent):
+#   REMOVED (dead — nothing in the current 6 core modules imports/calls these):
+#     - kraken2            (Kraken2 pre-filtering was removed from
+#                            preprocessing.py's real 13-step design)
+#     - cd-hit              (not used anywhere in the current pipeline)
+#     - dcor / dcor_parallel (coverage.py v9 uses plain k-NN distances --
+#                            the `dcor` package and its config keys are gone)
+#     - leidenalg / python-igraph (not imported by clustering.py or any
+#                            other current module -- HDBSCAN is the only
+#                            clustering algorithm now)
+#   ADDED (genuinely required but missing from the v6 list):
+#     - scipy               (imported directly by coverage.py -- v6's env
+#                            file never listed it explicitly, relying on it
+#                            being pulled in transitively by another package,
+#                            which is not guaranteed)
+#     - seqkit               (preprocessing.py's own `required_tools` dict
+#                            lists seqkit as REQUIRED for step 5 -- length
+#                            pre-filtering. The user's instruction list for
+#                            this file omitted it; adding it back rather than
+#                            silently reproducing that omission, since
+#                            preprocessing will hard-stop in step 1 without
+#                            it. See preprocessing.py line ~818.)
+#
+# NOT included here — EukCC runs in its OWN, SEPARATE conda environment
+# (config.yaml: eukcc_conda_env, default name "eukcc"), invoked at run time
+# via `conda run -n <eukcc_conda_env> eukcc ...` from inside
+# hyphaesbin/clustering/clustering.py (run_eukcc() / run_eukcc_merge()).
+# `conda` itself must be on PATH for that to work (see EXTERNAL TOOLS below);
+# the eukcc env's name must match config.yaml's eukcc_conda_env exactly, or
+# set eukcc_conda_env to whatever you actually name it. Build it separately,
+# e.g.:
+#   conda create -n eukcc -c bioconda -c conda-forge eukcc=2.1
+# CheckM2 is NOT used anywhere in this pipeline (removed from clustering.py
+# per an earlier consolidation pass) and has no environment entry here.
+#
+# Build with:
+#   conda env create -f environment.yaml
+#   conda activate hyphaesbin
+#
+# IMPORTANT — nothing in this pipeline auto-installs packages or tools at
+# run time (deps.py only ever detects and reports; preprocessing.py's
+# `auto_install_tools` config flag defaults to False and should be left
+# False in production — see config.yaml). This file is the ONE place
+# installation happens, once, up front.
+# =============================================================================
+
+name: hyphaesbin
+channels:
+  - pytorch
+  - bioconda
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.10
+
+  # ── Required Python packages ────────────────────────────────────────────
+  # (import name -> conda/pip package, per deps.py's PYTHON_DEPS "required=True")
+  - pyyaml            # import yaml
+  - numpy
+  - pandas
+  - psutil            # process-tree RAM, CPU and disk I/O profiler
+  - scipy             # imported directly by coverage.py (k-NN cKDTree fallback)
+  - scikit-learn       # import sklearn
+  - biopython          # import Bio
+  - pytorch            # CPU build by default on this channel; see GPU note below
+
+  # ── Optional Python packages ────────────────────────────────────────────
+  # Each is independently optional: its absence disables exactly the one
+  # feature named, never the whole pipeline (see deps.py check_python_deps()
+  # / check_all() for the exact fallback each module takes).
+  - hdbscan            # clustering.py's core CPU clustering algorithm --
+                        # optional at the ENVIRONMENT level (pipeline installs
+                        # fine without it) but clustering.py itself will raise
+                        # ImportError if you actually try to run Phase 6
+                        # without it -- install this one unless you truly
+                        # only run phases 1-5.
+  - faiss-cpu          # coverage.py's preferred k-NN backend; falls back to
+                        # scipy cKDTree, then a numpy brute-force fallback, on
+                        # its own if absent (see coverage.py DEFAULT config
+                        # brute_force_max_n safety cap).
+                        # GPU alternative: swap this single line for
+                        # faiss-gpu (also from conda-forge) ONLY on a machine
+                        # with a CUDA-capable GPU and matching CUDA toolkit --
+                        # do NOT install faiss-gpu on a CPU-only machine, it
+                        # will not import.
+
+  # ── External bioinformatics executables ─────────────────────────────────
+  # Versions pinned where this pipeline's own code has been verified against
+  # a specific version; otherwise "latest from bioconda" with the tool's own
+  # --version/-v flag used by deps.py to report whatever actually got
+  # installed. Run `python -m hyphaesbin.utils.deps` (or call
+  # deps.check_all()/format_report() from main.py, which it does automatically
+  # at startup) after building this environment to confirm every tool below
+  # actually resolved on PATH -- conda occasionally fails a bioconda package
+  # silently-degrades to a stub on some platforms.
+  - minimap2=2.28      # preprocessing.py step 9 (read mapping) -- REQUIRED
+  - samtools=1.20      # preprocessing.py step 9 (read mapping) -- REQUIRED
+  - seqkit=2.8         # preprocessing.py step 5 (length pre-filter) -- REQUIRED
+                        # (see ADDED note above -- omitted from the user's
+                        # original list but hard-required by the real code)
+  - skani=0.3.2          # preprocessing.py step 4 + clustering.py post-binning
+                        # dedup/consistency-check -- REQUIRED for
+                        # preprocessing; clustering degrades gracefully
+                        # (warns + skips dedup) if missing
+  - coverm=0.7         # preprocessing.py step 9 (coverage table) -- REQUIRED
+  - bioconda::tiara     # preprocessing.py step 6 (classification) -- REQUIRED
+                        # (pip package name is "tiara-classifier" if the
+                        # bioconda build isn't available for your platform;
+                        # confirm `tiara --version` resolves after install)
+  - whokaryote          # preprocessing.py step 6 (classification) -- REQUIRED
+                        # (installs the `whokaryote.py` executable deps.py
+                        # and preprocessing.py both look for)
+  - barrnap=0.9         # preprocessing.py step 8 (rDNA masking) -- REQUIRED
+  - mmseqs2=15.6f452    # te_composition.py te_mode="fast" (the default) --
+                        # REQUIRED unless te_mode="efficient"
+  - repeatmasker=4.1.7  # te_composition.py te_mode="efficient" -- REQUIRED
+                        # only if you switch te_mode to "efficient" in
+                        # config.yaml (far slower, higher sensitivity)
+
+  # `conda` itself is required on PATH for clustering.py to invoke EukCC's
+  # separate environment (`conda run -n eukcc ...`) -- already satisfied by
+  # the fact that you're using conda to build this environment in the first
+  # place, listed here only so deps.py's report has something to point at.
+
+# ── GPU packages -- deliberately NOT installed by default ──────────────────
+# RAPIDS/cuML gives clustering.py an optional GPU HDBSCAN backend
+# (clustering_backend: "gpu"/"auto" in config.yaml). It requires a specific
+# CUDA toolkit version and the `rapidsai` channel, and will not install (or
+# will install broken) on a CPU-only machine -- per the instruction not to
+# force GPU-only packages onto CPU computers, it is NOT in the dependency
+# list above. On a supported CUDA GPU machine, create a SEPARATE environment
+# (or a GPU variant of this one) with, e.g.:
+#
+#   conda create -n hyphaesbin-gpu -c rapidsai -c conda-forge -c nvidia \
+#       -c pytorch -c bioconda \
+#       python=3.10 cuml=24.10 cuda-version=12.0 pytorch pytorch-cuda=12.1 \
+#       faiss-gpu pyyaml numpy pandas scipy scikit-learn biopython hdbscan \
+#       minimap2 samtools seqkit skani coverm tiara whokaryote barrnap \
+#       mmseqs2 repeatmasker
+#
+# and check the exact RAPIDS/CUDA/PyTorch version compatibility matrix at
+# https://docs.rapids.ai/install (it changes between RAPIDS releases) before
+# pinning versions -- pytorch-cuda/cuda-version above are illustrative, not
+# verified against a specific RAPIDS release in this project. Whether a run
+# actually gets a GPU either way is decided at run time by encoder.py's
+# resolve_device() and clustering.py's resolve_clustering_backend() from the
+# config's `device` / `clustering_backend` settings ("auto" tries GPU and
+# falls back to CPU with a logged warning if none is usable) -- installing
+# cuml/faiss-gpu here does not by itself force GPU use.
+
+# Sanity check after activation (also done automatically by main.py at
+# startup via deps.check_all() / deps.format_report() -- this is the same
+# check, runnable standalone):
+#   python -c "import torch, yaml, numpy, pandas, scipy, sklearn, Bio; print('core OK')"
+#   python -c "import hdbscan, faiss" 2>&1  # optional -- absence is reported, not fatal
+#   for t in minimap2 samtools seqkit skani coverm tiara whokaryote.py barrnap mmseqs RepeatMasker conda; do
+#     which "$t" || echo "MISSING: $t"
+#   done
