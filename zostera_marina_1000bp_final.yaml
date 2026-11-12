@@ -1,0 +1,341 @@
+# =============================================================================
+# Zostera marina -- FINAL (v10): same clustering policy as camisim_final.yaml
+# =============================================================================
+# Changes vs the previous file (everything else, incl. the Zostera-tuned sub-cluster/merge
+# thresholds, is unchanged):
+#   gate_enabled false            v9 split gate vetoed correct splits on CAMISIM (ground truth); YAML used exactly
+#   noise rescue early + centroid v8.8 behaviour; late kNN rescue built a multi-species junk bin on CAMISIM
+#   refine_cov_standardize false  v8.8 (12 eukaryote HQ on CAMISIM)
+#   subcluster_noise_min_agreement 0.6, subcluster_min_bin_bp 0 = off (contig-count trigger only, v8.8)
+#   tnf_consensus off             moved ~30 contigs on CAMISIM, ~15 min runtime
+#   prune/reassign off            prune_check on this dataset: 0.01-0.28 % bp removed, mostly genome/organelles
+#   hdbscan_min_samples 20 + hdbscan_max_cluster_size 20000 (same as CAMISIM final)
+# Encoder settings unchanged -> cached encoders are reused; only clustering reruns.
+# -----------------------------------------------------------------------------
+# Zostera marina: exactly four TE combinations. Original configuration filename retained.
+# Based on the supplied configuration; no claim of real-data validation.
+# Preprocessing/features are shared; each run has its own encoder/clustering outputs.
+# Main Python environment must contain the full pipeline dependencies and psutil.
+
+# General: 32 threads; retain contigs starting at 1,000 bp
+threads: 32
+seed: 32
+force_trust_checkpoints: false
+
+# Preprocessing
+read_type: "short"
+read_type_detect_seed: 0
+auto_install: true             # install missing tools / python packages / HyphaeSBin_classify env automatically
+dedup_ani: 99.5
+dedup_min_af: 95.0
+dedup_min_length_ratio: 0.0
+dedup_min_length: 2000
+dedup_cross_sample_only: false
+dedup_skani_args: "-c 30 -m 200 --faster-small -s 95"
+skip_dedup: false
+dedup_max_contigs: 500000
+# Classifier cutoffs are now honoured exactly (no longer overwritten by adaptive_filter_min).
+# 2000 = same as the clustering cutoff (fragmented fungal assemblies). Shorter contigs stay 'Unknown'
+# with an explicit call_basis in contig_classification.tsv.
+tiara_min_len: 2000
+tiara_prob_cutoff: [0.65, 0.65]
+whokaryote_minsize: 2000
+whokaryote_model: "T"
+classification_confidence_high: 0.8
+rule_based_high_conf_sources: null
+barrnap_kingdom: "auto"        # resolved against the installed barrnap (1.10: fun; 0.9: euk)
+max_mapping_workers: "auto"
+min_threads_per_sample: 8
+adaptive_min_cov: 2.0
+adaptive_min_breadth: 0.3
+scoring_cov_cv_high: 1.5
+scoring_gc_zscore_flag: 3.0
+scoring_tnf_dist_flag: 2.5
+enable_tnf_qc_signal: true
+
+# Coverage features
+coverage_k: 200
+coverage_n_cores: null
+coverage_strict_numeric_columns: true
+coverage_outlier_cap_percentile: 99.5
+coverage_deterministic: false
+coverage_brute_force_max_n: 5000
+
+# TE database: inherited path; verify it exists on your server
+funTEdb: "/DATA_LUN/skkumara/databases/MycoMobilome_v1.1/MycoMobilome_v1.1-clustered_80_TE_library.fasta"
+
+# TE features: MMseqs2 search (RepeatMasker mode removed in v9)
+mmseqs_sensitivity: 5.7
+mmseqs_min_seq_id: 0.7
+mmseqs_coverage: 0.1
+mmseqs_cov_mode: 1                # 1 = fraction of the TE consensus (target) that must align; 2 = of the contig
+mmseqs_max_seq_len: 100000
+mmseqs_evalue: 1e-05
+apply_length_weight_to_features: false
+full_confidence_te_bp: 5000
+full_confidence_length: 10000
+full_confidence_hits: 5
+weight_te_coef: 0.55
+weight_hit_coef: 0.25
+weight_quality_coef: 0.2
+unclassified_warn_fraction: 0.95
+
+# TNF features
+min_contig_len: 1000
+min_valid_kmers: 50
+full_confidence_kmers: 5000
+weight_mode: "confidence"
+
+# Encoder: multi-run code selects the active inputs for each run
+tnf_include: true
+te_include: true
+cov_include: true
+allow_missing_modalities: false
+device: "cpu"
+parallel_phase1: false
+parallel_phase1_max_workers: null
+latent_dim_tnf: 32
+latent_dim_te: 5
+latent_dim_cov: null
+final_dim: null
+hidden_scale: 4
+hidden_min: 32
+hidden_max: 512
+dropout: 0.1
+n_hidden_layers: 2
+beta_tnf: 0.01
+beta_te: 0.1
+beta_cov: 0.1
+kl_anneal_epochs: 50
+kl_free_bits: 0.01
+phase1_epochs_tnf: 75
+phase1_epochs_te: 50
+phase1_epochs_cov: 50
+phase2_epochs: 50
+phase1_lr: 0.001
+phase2_lr: 0.00005
+loss_scale_tnf: 1.0
+loss_scale_te: 0.1
+loss_scale_cov: 0.1
+loss_scale_fusion: 0.05
+fusion_mode: "contig_weighted"
+fusion_gate_entropy_weight: 0.0          # v9: >0 pulls every gate weight back to 1/3
+cov_use_n_samples_present_as_feature: false
+batch_size: null
+
+# Clustering: initial clusters use contigs >=2,000 bp
+hdbscan_algorithm: "best"
+hdbscan_min_cluster_size: 30
+hdbscan_min_samples: 20
+hdbscan_epsilon: 0.0
+hdbscan_method: "eom"
+hdbscan_max_cluster_size: 20000
+hdbscan_soft_prob_min: 0.35
+cluster_min_contig_len: 2000
+
+# Noise rescue
+noise_rescue_enabled: true
+noise_rescue_candidate: knn
+noise_rescue_stage: late
+noise_max_distance: 1.0
+noise_rescue_min_margin: 0.0
+noise_local_agreement_enabled: true
+noise_local_k: 10
+noise_local_min_support: 5
+noise_local_agreement: 0.9
+noise_reference_prob_min: 0.35
+noise_neighbor_max_distance: 0.65
+noise_query_batch_size: 4096
+
+# Iterative refinement
+max_iter: 0
+convergence_threshold: 0.01
+refinement_max_distance: 0.35
+
+# Sub-clustering
+subcluster_enabled: false   # v10b: HDBSCAN ms20+cap splits; subcluster only fragmented pure genomes (GT)
+subcluster_min_bin_contigs: 2000
+subcluster_method: "leaf"
+subcluster_min_cluster_size: 15
+subcluster_min_samples: 5
+subcluster_tnf_sep_max: 1.5
+subcluster_cov_merge_tau: 1.0
+subcluster_min_part_bp: 500000
+subcluster_noise_k: 10
+subcluster_noise_min_agreement: 0.6   # v10 (v8.8)
+subcluster_max_misfit: 0.25
+merge_max_gc_diff: 0.05
+merge_gc_outside_max: 0.0
+merge_gc_q_lo: 0.05
+merge_gc_q_hi: 0.95
+subcluster_te_mode: "auto"
+subcluster_te_min_weight: 0.3
+subcluster_te_min_agreement: 0.1
+
+# Coverage-shape pruning
+prune_enabled: false                 # v10
+prune_min_bin_contigs: 30
+prune_shape_z: 4.0
+prune_max_frac: 0.2
+
+# Same-genome bin merging
+binmerge_enabled: true
+binmerge_tnf_sep_max: 1.5
+binmerge_cov_tau: 1.0
+binmerge_min_contigs: 10
+binmerge_max_misfit: 0.25
+binmerge_misfit_z: 4.0
+binmerge_min_tnf_mix: 0.16
+
+# Reassignment
+reassign_enabled: false              # v10 (nothing pruned)
+reassign_k: 20
+reassign_min_votes: 5
+reassign_max_z: 3.0
+
+# TNF consensus
+tnf_consensus_enabled: false         # v10
+tnf_consensus_k: 15
+tnf_consensus_min: 0.8
+tnf_consensus_iters: 5
+tnf_consensus_max_z: 3.0
+
+# Placement of subclusters
+subcluster_best_home: true
+refine_cov_standardize: false        # v10 (v8.8)
+best_home_k: 15
+best_home_min_share: 0.7
+best_home_max_ratio: 1.5
+best_home_sample: 300
+
+# Marker-checked merging
+marker_merge_enabled: false
+marker_min_bp: 500000
+marker_max_checks: 40
+marker_min_gain: 5.0
+marker_max_cont_increase: 2.0
+
+# Recruit retained 1,000-1,999 bp contigs into established bins
+recruit_enabled: true
+recruit_min_len: 1000
+recruit_k: 15
+recruit_min_support: 10
+recruit_agreement: 0.9
+recruit_max_dist: 0.5
+
+# Bin filtering and skani deduplication
+min_contigs_per_bin: 1
+min_bin_length_bp: 500000
+min_bin_n50_bp: 1000
+skani_ani_threshold: 99.0
+skani_min_af: 80.0
+
+# EukCC: score individual runs; preserve existing merge-off policy
+run_eukcc: true
+eukcc_single_per_bin: true
+eukcc_db: "/DATA_LUN/skkumara/databases/eukcc2_db_ver_1.1/"
+eukcc_conda_env: "eukcc22"
+eukcc_scratch_dir: "/tmp"
+eukcc_merge_enabled: false
+eukcc_merge_n_combine: 1
+eukcc_merge_ani: 99
+eukcc_merge_within: 1500
+
+# Runtime
+compute_silhouette: false
+resume: true
+clustering_backend: "cpu"
+clustering_threads: 32
+clustering_seed: 42
+clusters_non_deduplicated_dir: "clusters_non_deduplicated"
+clusters_deduplicated_dir: "clusters_deduplicated"
+
+eukcc_executable: "/DATA_LUN/skkumara/Final/Zosteria_marina/miniforge3/envs/eukcc22/bin/eukcc"
+
+# Resource reports
+resource_profile_enabled: true
+resource_profile_interval_seconds: 0.5
+
+# Explicit preprocessing v4 policy; same-sample depth and breadth
+adaptive_cov_stat: "sample"
+
+# =============================================================================
+# v9 settings
+# =============================================================================
+# Length scale: >= contig_filter = main set (never adaptive-filtered); adaptive_filter_min..contig_filter-1 =
+# short contigs, set aside and adaptive-filtered (one sample: depth >= adaptive_min_cov AND breadth >=
+# adaptive_min_breadth); < adaptive_filter_min removed.
+contig_filter: 2000
+adaptive_filter_min: 1000
+adaptive_min_samples: 1
+short_contigs_in_encoder_training: false
+short_contigs_in_clustering_rescue: true
+
+# Classification (Tiara + Whokaryote): every prokaryotic call is removed, incl. Prokaryotic_Unclassified;
+# conflicts get Whokaryote's (Tiara-integrated) call unless Tiara's own probability >= the override.
+prokaryote_removal_enabled: true
+prokaryote_removal_mode: "any"             # "agree" = old behaviour (both classifiers must call prokaryote)
+prokaryote_min_length: 0
+classification_conflict_override: 0.90
+unknown_removal_enabled: false             # no call from either classifier -> kept (may be eukaryotic)
+mitochondrial_removal_enabled: false       # Tiara organelle calls: see README (CAMISIM/Zostera evidence)
+plastid_removal_enabled: false
+barrnap_required: true                     # stop instead of continuing unmasked
+
+# Clustering quality gate + local parameter search
+gate_enabled: false                        # v10 FINAL: YAML values used exactly, no split veto
+gate_sweep: true
+gate_tolerance: 0.10                       # Zostera-calibrated
+gate_assignment_weight: 0.5
+# MASTER SWITCH: false = no parameter search anywhere (YAML values used exactly; the gate still accepts/rejects).
+wide_search_enabled: true
+# Per-parameter switches: false = keep the YAML value fixed, the other parameters are still searched.
+# min_samples / min_cluster_size are the expensive HDBSCAN refits on ~111k contigs.
+search_hdbscan_min_cluster_size: false
+search_hdbscan_min_samples: false
+gate_search_exclude: []                    # any other parameter names to keep fixed, e.g. [recruit_k, noise_local_k]
+gate_hdbscan_cache: true                   # reuse HDBSCAN tree computations between refits with the same min_samples
+# Wide coarse-to-fine search (ranges: hyphaesbin/clustering/quality_gate.py SEARCH_SPACE / STAGE_PARAMS):
+# broad list -> refine around the best 2 regions -> top-2 combination grid; boundary optima are flagged.
+gate_max_evals_per_stage: 40
+gate_stage_time_budget_s: 2400             # per stage; a stage whose default run takes > 1/3 of this is not searched
+gate_sweep_hdbscan: false
+gate_hdbscan_max_evals: 30
+gate_hdbscan_time_budget_s: 5400
+gate_refine_regions: 2
+gate_combo_max: 8
+gate_search_overrides: null                # e.g. {hdbscan_min_cluster_size: [10, 20, 30, 50, 100, 200]}
+# Split stage decided per affected bin: re-join fragments, re-attach leftovers, keep a bin's split only with
+# TNF separability (local kNN drop <= gate_knn_max_drop_pp) OR coverage difference (z >= gate_split_cov_z)
+gate_split_per_bin: true
+gate_split_cov_z: 2.0
+gate_split_max_bp_loss_frac: 0.05
+gate_split_rejoin_mix: 0.3
+gate_split_reattach: true                  # leftovers re-attached only with TNF-majority + distance + coverage support
+gate_split_reattach_dist_q: 0.95
+gate_split_reattach_cov_z: 3.0
+gate_max_bp_loss_pp: 2.0                  # no stage may discard > 2 pp of assigned sequence to look better
+# Organelles: report = listed with evidence, bins unchanged; separate = also write clusters_nuclear_only/
+organelle_policy: separate
+organelle_confirm_min_conf: 0.90
+gate_knn_max_drop_pp: 3.0                  # kNN agreement may drop at most 3 percentage points (raw values reported)
+gate_split_stages: ["04b_after_subcluster"]  # split stages: kNN judged at k=10 only
+gate_save_candidates: true                 # every candidate's labels -> clustering/gate_candidates/<stage>/
+subcluster_min_bin_bp: 0                  # v10: 0 = bp trigger OFF (code: `_min_bp > 0`), contig-count trigger only (v8.8)
+refine_cov_extra_log1p: true               # coverage features are already log1p'd; true = keep calibrated 2nd log1p
+
+# Bin QC (EukCC). passed = finite score with completeness >= min and contamination <= max; no score = unassessed
+store_rejected_bins: true                  # rejected/failed/unassessed bins kept on disk with reasons
+
+# Runs: two INDEPENDENT runs, no pooled binning, NO automatic winner -> both exported to <outdir>/results/
+modality_runs: ["tetnfcov", "tnfcov"]
+
+# Fusion gate (v9): why it sat at ~0.333 and the fix -> README.md "Fusion gate"
+gate_lr: null                     # null = 1e-2 (global) / 1e-3 (contig_weighted); the rest of Phase 2 keeps phase2_lr
+gate_reliability_prior: true      # modality with reliability 0 for a contig (e.g. no TE) gets ~0 gate there
+gate_balance_dims: true           # equal-norm blocks: gate compares modalities, not 32 vs 5 dims
+compute_modality_influence: true  # writes encoder/modality_influence.json (ablation share = real influence)
+
+# v10: split-only per-piece TNF threshold (90 % agreement); mock test: +22 correct splits, 0 bad splits
+gate_split_knn_max_drop_pp: 10
+train_ids_path: /home/skkumara/zostera_1000/preprocessing/final/encoder_train_ids.txt

@@ -1,0 +1,2 @@
+[console_scripts]
+hyphaesbin = hyphaesbin.pipeline:main
